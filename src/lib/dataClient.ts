@@ -23,8 +23,8 @@ apiClient.interceptors.response.use(
   (err) => {
     if (err?.response?.status === 401) {
       clearToken();
-      // reload app so guards/routers kick in
-      window.location.reload();
+      // don't reload the page
+      throw new Error('unauthorized');
     }
     return Promise.reject(err);
   }
