@@ -4,12 +4,11 @@ import pg, { QueryResult, QueryResultRow } from 'pg';
 const {
   DATABASE_URL,
   PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE,
-  NODE_ENV
 } = process.env;
 
-const isExternalUrl = !!DATABASE_URL && /^postgresql?:\/\//i.test(DATABASE_URL);
+const isExternalUrl = !!DATABASE_URL && /^postgres(ql)?:\/\//i.test(DATABASE_URL);
 
-const pool = new pg.Pool(
+export const pool = new pg.Pool(
   DATABASE_URL
     ? {
         connectionString: DATABASE_URL,
@@ -31,5 +30,3 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
 ): Promise<QueryResult<T>> {
   return pool.query<T>(text, params);
 }
-
-export { pool };
