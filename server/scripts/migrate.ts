@@ -1,64 +1,112 @@
-﻿import { pool, query } from '../db.js';
+﻿// server/scripts/migrate.ts
+import { pool } from "../db.js";
 
 async function run(sql: string) {
-  console.log(`Running: ${sql}`);
   try {
-    await query(sql);
-    console.log('Success');
-  } catch (error) {
-    console.error('Error:', error);
-    throw error;
+    await pool.query(sql);
+  } catch (err) {
+    console.error("❌ Migration step failed:\n", sql, "\n---\n", err);
+    throw err;
   }
 }
 
-async function main() {
-  console.log('Starting database migrations...');
+export async function runMigrations() {
+  console.log("Starting database migrations...");
 
-  // USERS – allow wider set of roles + optional name
-  await run(`ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT;`);
-  await run(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;`);
+  // Needed for gen_random_uuid(), crypt()
+  await run(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+  await run(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+
+  // USERS
   await run(`
-    ALTER TABLE users
-    ADD CONSTRAINT users_role_check
-    CHECK (role IN ('admin','staff','kitchen_staff','inventory_staff','delivery_staff','manager'))
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'admin',
+      name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    );
   `);
 
-  // INVENTORY – ensure columns your routes/FE need
-  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS sku TEXT;`);
-  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS unit TEXT;`);
-  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS reorder_level NUMERIC DEFAULT 0;`);
-  // optional: if your FE expects these names, keep them null-safe
-  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS cost_per_unit NUMERIC;`);
-  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS last_restocked TIMESTAMPTZ;`);
-  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS expiry_date DATE;`);
-
-  // ORDERS – add order_number if missing
-  await run(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_number TEXT UNIQUE;`);
-
-  // STOCK MOVEMENTS – ensure FK points to inventory
+  // KITCHENS (kept because your file had it)
   await run(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM information_schema.constraint_column_usage
-        WHERE table_name='stock_movements' AND constraint_name='stock_movements_inventory_id_fkey'
-      ) THEN
-        ALTER TABLE stock_movements
-        ADD CONSTRAINT stock_movements_inventory_id_fkey
-        FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE;
-      END IF;
-    END$$;
+    CREATE TABLE IF NOT EXISTS kitchens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name TEXT NOT NULL,
+      location TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    );
   `);
 
-  console.log('All migrations completed successfully!');
+  // SUPPLIERS
+  await run(`
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name TEXT NOT NULL,
+      contact TEXT NOT NULL,
+      email TEXT,
+      address TEXT,
+      categories TEXT[] NOT NULL DEFAULT '{}',
+      rating NUMERIC,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    );
+  `);
+
+  // INVENTORY ITEMS
+  await run(`
+    CREATE TABLE IF NOT EXISTS inventory_items (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name TEXT NOT NULL,
+      sku TEXT,
+      quantity NUMERIC NOT NULL DEFAULT 0,
+      unit TEXT,
+      reorder_level NUMERIC DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    );
+  `);
+
+  // ORDERS
+  await run(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      customer_id UUID,
+      status TEXT NOT NULL DEFAULT 'pending',
+      total NUMERIC DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    );
+  `);
+
+  // STOCK MOVEMENTS
+  await run(`
+    CREATE TABLE IF NOT EXISTS stock_movements (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      inventory_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      quantity NUMERIC NOT NULL,
+      type TEXT NOT NULL,
+      note TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // Seed admin (idempotent)
+  await run(`
+    INSERT INTO users (email, password_hash, role, name)
+    VALUES ('admin@example.com', crypt('admin123', gen_salt('bf')), 'admin', 'Admin')
+    ON CONFLICT (email) DO NOTHING;
+  `);
+
+  console.log("✅ Migrations complete");
 }
 
-if (require.main === module) {
-  main()
+if (process.argv[1] && process.argv[1].endsWith("migrate.js")) {
+  runMigrations()
     .then(() => process.exit(0))
-    .catch((error) => {
-      console.error('Migration failed:', error);
-      process.exit(1);
-    });
+    .catch(() => process.exit(1));
 }
