@@ -48,10 +48,24 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_id UUID,
   status TEXT NOT NULL DEFAULT 'pending',
   total NUMERIC DEFAULT 0,
+  order_number TEXT UNIQUE,             -- <— add
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ
 );
 
+CREATE SEQUENCE IF NOT EXISTS order_num_seq START 1001;
+
+CREATE OR REPLACE FUNCTION generate_order_number() RETURNS TEXT AS $$
+DECLARE
+  yyyymm TEXT := to_char(NOW(), 'YYYYMM');
+  n BIGINT := nextval('order_num_seq');
+BEGIN
+  RETURN 'ORD-' || yyyymm || '-' || lpad(n::TEXT, 4, '0');
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+ALTER TABLE orders
+  ALTER COLUMN order_number SET DEFAULT generate_order_number();
 CREATE TABLE IF NOT EXISTS stock_movements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   inventory_item_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
