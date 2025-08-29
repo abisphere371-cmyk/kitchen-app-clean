@@ -1,6 +1,5 @@
 // server/db.ts
-import pg from "pg";
-const { Pool } = pg;
+import { Pool, QueryResult, QueryResultRow } from 'pg';
 
 function buildConfig() {
   const connectionString =
@@ -50,9 +49,11 @@ function buildConfig() {
 export const pool = new Pool(buildConfig());
 
 // tiny helper
-export async function query<T = any>(text: string, params?: any[]) {
-  const res = await pool.query<T>(text, params);
-  return res;
+export async function query<T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  params: any[] = []
+): Promise<QueryResult<T>> {
+  return pool.query<T>(text, params);
 }
 // Test connection
 export async function testConnection() {
