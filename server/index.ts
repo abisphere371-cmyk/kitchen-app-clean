@@ -22,14 +22,6 @@ const app = express();
 // trust proxy so `secure` cookies work behind Railway's proxy
 app.set("trust proxy", 1);
 
-const ORIGIN = process.env.VITE_API_BASE_URL || process.env.CLIENT_ORIGIN || undefined;
-// If frontend is the same origin, you can even disable cors for /api.
-// If you use CORS, configure it for credentials:
-app.use(cors({
-  origin: ORIGIN ?? true,   // or explicitly "https://<your-app>.up.railway.app"
-  credentials: true,
-}));
-
 app.use(express.json());
 app.use(cookieParser());
 app.use(morgan('dev'));
@@ -45,6 +37,9 @@ app.use('/api/stock-movements', stockMovementsRoutes);
 
 // Health
 app.get('/health', (_req, res) => res.status(200).json({ ok: true }));
+
+// Quick health route
+app.get("/api/health", (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
 // Serve built frontend if present, otherwise simple JSON
 const distPath = path.resolve(process.cwd(), 'dist');
@@ -74,3 +69,15 @@ const PORT = process.env.PORT || 8080;
     process.exit(1);
   }
 })();
+
+// Global error handler - put this AFTER you register all /api routes
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const status = typeof err?.status === "number" ? err.status : 500;
+  const payload = {
+    error: "server_error",
+    message: err?.message || "Internal Server Error",
+    path: req.originalUrl,
+  };
+  console.error("API error:", status, req.method, req.originalUrl, err?.stack || err);
+  res.status(status).json(payload);
+});

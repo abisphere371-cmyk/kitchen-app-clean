@@ -4,23 +4,41 @@
 // --- Helpers ---
 const BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function api(path: string, init: RequestInit = {}) {
   const res = await fetch(`${BASE}${path}`, {
-    // ensure cookies (session) get sent on every request
-    credentials: 'include',
+    ...init,
+    credentials: "include",
     headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
     },
-    ...options,
   });
+
+  const ct = res.headers.get("content-type") || "";
+  const bodyText = await res.text();
+
+  // Try JSON if advertised or looks like JSON
+  const tryParse = () => {
+    try { return JSON.parse(bodyText); } catch { return null; }
+  };
+
+  const maybeJson = (ct.includes("application/json") || bodyText.trim().startsWith("{")) ? tryParse() : null;
+
   if (!res.ok) {
-    // bubble up "unauthorized" nicely for UI
-    const text = await res.text().catch(() => '');
-    throw new Error(text || res.statusText);
+    // surface a useful error
+    throw new Error(
+      maybeJson
+        ? JSON.stringify(maybeJson)
+        : `${res.status} ${res.statusText}: ${bodyText.slice(0, 300)}`
+    );
   }
-  // 204 may have no body
-  return (res.status === 204 ? (undefined as unknown as T) : await res.json());
+
+  return maybeJson ?? {};
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await api(path, options);
+  return res as T;
 }
 
 // ====================== AUTH ======================
