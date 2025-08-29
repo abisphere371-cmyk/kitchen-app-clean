@@ -40,7 +40,7 @@ export async function runMigrations() {
         id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         email         text UNIQUE NOT NULL,
         password_hash text NOT NULL,
-        role          text NOT NULL,           // don't over-constrain; app uses many roles
+        role          text NOT NULL,           -- don't over-constrain; app uses many roles
         name          text,
         active        boolean NOT NULL DEFAULT true,
         created_at    timestamptz NOT NULL DEFAULT now(),
@@ -85,7 +85,7 @@ export async function runMigrations() {
         sku            text,
         category       text,
         unit           text,
-        quantity       integer NOT NULL DEFAULT 0,      // <- app expects this
+        quantity       integer NOT NULL DEFAULT 0,      -- <- app expects this
         min_stock      integer NOT NULL DEFAULT 0,
         max_stock      integer NOT NULL DEFAULT 0,
         cost_per_unit  numeric(12,2) NOT NULL DEFAULT 0,
@@ -103,9 +103,9 @@ export async function runMigrations() {
       CREATE TABLE IF NOT EXISTS stock_movements (
         id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         item_id       uuid NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
-        delta         integer NOT NULL,                // +restock / -consumption
-        movement_type text,                            // e.g. 'restock','use','waste','adjustment'
-        reference     text,                            // free-form reference (order, note, etc.)
+        delta         integer NOT NULL,                -- +restock / -consumption
+        movement_type text,                            -- e.g. 'restock','use','waste','adjustment
+        reference     text,                            -- free-form reference (order, note, etc.)
         created_by    uuid REFERENCES users(id),
         created_at    timestamptz NOT NULL DEFAULT now()
       );
@@ -118,7 +118,7 @@ export async function runMigrations() {
         id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         name         text NOT NULL,
         description  text,
-        ingredients  jsonb,         // [{ item_id, quantity, unit }]
+        ingredients  jsonb,         -- [{ item_id, quantity, unit }]
         instructions text,
         cost         numeric(12,2),
         price        numeric(12,2),
@@ -131,7 +131,7 @@ export async function runMigrations() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS orders (
         id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        order_number  text UNIQUE,                     // app calls generate_order_number()
+        order_number  text UNIQUE,                     -- app calls generate_order_number()
         status        text NOT NULL DEFAULT 'pending',
         customer_id   uuid REFERENCES customers(id) ON DELETE SET NULL,
         total_amount  numeric(12,2) NOT NULL DEFAULT 0,
@@ -160,7 +160,7 @@ export async function runMigrations() {
         supplier_id  uuid REFERENCES suppliers(id) ON DELETE SET NULL,
         order_date   date NOT NULL DEFAULT CURRENT_DATE,
         status       text NOT NULL DEFAULT 'open',
-        items        jsonb,                            // [{ item_id, quantity, cost_per_unit }]
+        items        jsonb,                            -- [{ item_id, quantity, cost_per_unit }]
         notes        text,
         created_at   timestamptz NOT NULL DEFAULT now(),
         updated_at   timestamptz NOT NULL DEFAULT now()
@@ -200,7 +200,7 @@ export async function runMigrations() {
       INSERT INTO users (email, password_hash, role, name, active)
       VALUES (
         'admin@example.com',
-        // bcrypt hash for 'admin123' (cost 10). Replace if you changed it.
+        -- bcrypt hash for 'admin123' (cost 10). Replace if you changed it.
         '$2a$10$Qb3Tx3vRzL8a3w3w3d7bXu2r4Ck0e8J5y3mV6dQ61Q0g7Q1yR4l.S',
         'admin',
         'Admin',
