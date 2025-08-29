@@ -1,62 +1,35 @@
 // server/db.ts
-import { Pool, QueryResult, QueryResultRow } from 'pg';
+import pg, { QueryResult, QueryResultRow } from 'pg';
 
-function buildConfig() {
-  const connectionString =
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    undefined;
+const {
+  DATABASE_URL,
+  PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE,
+  NODE_ENV
+} = process.env;
 
-  // Fallback to discrete variables if no URL is present
-  const {
-    POSTGRES_HOST,
-    POSTGRES_PORT = "5432",
-    POSTGRES_USER,
-    POSTGRES_PASSWORD,
-    POSTGRES_DATABASE,
-  } = process.env;
+const isExternalUrl = !!DATABASE_URL && /^postgresql?:\/\//i.test(DATABASE_URL);
 
-  const haveParts =
-    POSTGRES_HOST && POSTGRES_USER && POSTGRES_PASSWORD && POSTGRES_DATABASE;
+const pool = new pg.Pool(
+  DATABASE_URL
+    ? {
+        connectionString: DATABASE_URL,
+        ssl: isExternalUrl ? { rejectUnauthorized: false } : undefined,
+      }
+    : {
+        host: PGHOST,
+        port: PGPORT ? Number(PGPORT) : 5432,
+        user: PGUSER,
+        password: PGPASSWORD,
+        database: PGDATABASE,
+        ssl: (PGHOST && !/\.internal$/.test(PGHOST)) ? { rejectUnauthorized: false } : undefined,
+      }
+);
 
-  const base =
-    connectionString
-      ? { connectionString }
-      : haveParts
-      ? {
-          host: POSTGRES_HOST,
-          port: Number(POSTGRES_PORT),
-          user: POSTGRES_USER,
-          password: POSTGRES_PASSWORD,
-          database: POSTGRES_DATABASE,
-        }
-      : null;
-
-  if (!base) {
-    // Make the failure obvious in logs instead of a cryptic pg error
-    throw new Error(
-      "No PostgreSQL connection info. Set DATABASE_URL (recommended) or POSTGRES_HOST/PORT/USER/PASSWORD/DATABASE."
-    );
-  }
-
-  // Railway Postgres requires SSL in production
-  const needSSL = process.env.NODE_ENV === "production";
-  return needSSL
-    ? { ...base, ssl: { rejectUnauthorized: false }, keepAlive: true }
-    : { ...base, keepAlive: true };
-}
-
-export const pool = new Pool(buildConfig());
-
-// tiny helper
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params: any[] = []
 ): Promise<QueryResult<T>> {
   return pool.query<T>(text, params);
 }
-// Test connection
-export async function testConnection() {
-  // simple ping
-  await pool.query('select 1');
-}
+
+export { pool };
