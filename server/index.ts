@@ -1,4 +1,4 @@
-import 'express-async-errors';                   // <-- add this first
+import "express-async-errors";
 import 'dotenv/config';
 import express from 'express';
 import morgan from 'morgan';
@@ -19,21 +19,18 @@ import stockMovementsRoutes from './routes/stockMovements.js';
 import recipesRoutes from './routes/recipes.js';
 import deliveryConfirmationsRoutes from './routes/deliveryConfirmations.js';
 import purchaseOrdersRoutes from './routes/purchaseOrders.js';
-import { runMigrations } from './migrate.js';   // ✅ correct path
+import { runMigrations } from './scripts/migrate.js';
 
 const app = express();
 
 // trust proxy so `secure` cookies work behind Railway's proxy
 app.set("trust proxy", 1);
 
-// Get frontend origin from environment variable or default to Railway URL
-const FRONTEND = process.env.FRONTEND_ORIGIN ?? 'https://web-production-34070.up.railway.app';
-
 app.use(express.json());
 app.use(cookieParser());
 app.use(morgan('dev'));
 app.use(cors({
-  origin: FRONTEND,
+  origin: (process.env.FRONTEND_ORIGIN ?? "").split(",").map(s => s.trim()).filter(Boolean) || true,
   credentials: true
 }));
 
@@ -66,14 +63,14 @@ if (fs.existsSync(distPath)) {
   );
 }
 
-const PORT = process.env.PORT || 8080;
-
-(async () => {
+async function start() {
   try {
     // Run migrations but DO NOT close the pool here
     await runMigrations();
-
+    
     await testConnection();
+    
+    const PORT = process.env.PORT || 8080;
     app.listen(PORT, () => {
       console.log(`🚀 API running on port ${PORT}`);
       console.log(`🔗 Health check: http://localhost:${PORT}/health`);
@@ -82,7 +79,9 @@ const PORT = process.env.PORT || 8080;
     console.error('❌ Fatal startup error:', err);
     process.exit(1);
   }
-})();
+}
+
+start();
 
 // Global error handler - put this AFTER you register all /api routes
 app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
