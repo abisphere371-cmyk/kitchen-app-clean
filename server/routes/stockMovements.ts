@@ -26,7 +26,7 @@ router.post("/", requireAuth, async (req: any, res: any) => {
     const delta = type === "in" ? +quantity : -quantity;
     const { rows } = await client.query(
       `
-      UPDATE inventory
+      UPDATE inventory_items
       SET quantity = GREATEST(0, quantity + $2),
           last_restocked = CASE WHEN $3 THEN NOW() ELSE last_restocked END,
           updated_at = NOW()

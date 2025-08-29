@@ -83,6 +83,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Load data on mount
   useEffect(() => {
     initializeData();
+    
+    const onLogin = () => initializeData();
+    window.addEventListener('auth:login', onLogin);
+    return () => window.removeEventListener('auth:login', onLogin);
   }, []);
 
   const initializeData = async () => {

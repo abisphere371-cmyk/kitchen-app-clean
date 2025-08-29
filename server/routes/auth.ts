@@ -39,15 +39,12 @@ router.post('/login', async (req: any, res: any) => {
     const token = signJwt({ id: user.id, email: user.email, role: user.role, name: user.name ?? null });
 
     // Set the auth cookie
-    const isProd = process.env.NODE_ENV === "production";
-    const ONE_DAY = 24 * 60 * 60 * 1000;
-
-    res.cookie("auth_token", token, {
+    res.cookie('auth_token', token, {
       httpOnly: true,
-      secure: isProd,          // true in prod (Railway is HTTPS)
-      sameSite: "lax",         // works for same-origin
-      path: "/",               // make sure all /api routes see it
-      maxAge: ONE_DAY,
+      sameSite: 'none',     // cross-site cookie works on HTTPS
+      secure: true,         // Railway is HTTPS => must be true
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
     res.json({ ok: true });
   } catch (err: any) {

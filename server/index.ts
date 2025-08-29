@@ -26,9 +26,16 @@ const app = express();
 // trust proxy so `secure` cookies work behind Railway's proxy
 app.set("trust proxy", 1);
 
+// Get frontend origin from environment variable or default to Railway URL
+const FRONTEND = process.env.FRONTEND_ORIGIN ?? 'https://web-production-34070.up.railway.app';
+
 app.use(express.json());
 app.use(cookieParser());
 app.use(morgan('dev'));
+app.use(cors({
+  origin: FRONTEND,
+  credentials: true
+}));
 
 // API routes
 app.use('/api/auth', authRoutes);

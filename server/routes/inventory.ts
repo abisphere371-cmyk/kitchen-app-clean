@@ -21,7 +21,7 @@ router.get("/", requireAuth, async (_req: any, res: any) => {
       expiry_date         AS "expiryDate",
       created_at,
       updated_at
-    FROM inventory
+    FROM inventory_items
     ORDER BY name ASC;
   `);
   res.json(rows);
@@ -51,21 +51,18 @@ router.post("/", requireAuth, async (req: any, res: any) => {
 
   const { rows } = await query(
     `
-    INSERT INTO inventory
-      (name, sku, unit, quantity, reorder_level, cost_per_unit, last_restocked, expiry_date)
+    INSERT INTO inventory_items
+      (name, sku, unit, quantity, reorder_level)
     VALUES
-      ($1,   $2,  $3,  $4,       $5,            $6,            $7,             $8)
+      ($1,   $2,  $3,  $4,       $5)
     RETURNING
       id, name, sku,
       quantity AS "currentStock",
       unit,
       reorder_level AS "minStock",
-      cost_per_unit AS "costPerUnit",
-      last_restocked AS "lastRestocked",
-      expiry_date AS "expiryDate",
       created_at, updated_at
     `,
-    [name, sku, unit, currentStock, minStock, costPerUnit, lastRestocked, expiryDate]
+    [name, sku, unit, currentStock, minStock]
   );
 
   res.status(201).json(rows[0]);
@@ -84,15 +81,12 @@ router.put("/:id", requireAuth, async (req: any, res: any) => {
 
   const { rows } = await query(
     `
-    UPDATE inventory SET
+    UPDATE inventory_items SET
       name = COALESCE($2, name),
       sku = COALESCE($3, sku),
       unit = COALESCE($4, unit),
       quantity = COALESCE($5, quantity),
       reorder_level = COALESCE($6, reorder_level),
-      cost_per_unit = COALESCE($7, cost_per_unit),
-      last_restocked = COALESCE($8, last_restocked),
-      expiry_date = COALESCE($9, expiry_date),
       updated_at = NOW()
     WHERE id = $1
     RETURNING
@@ -100,12 +94,9 @@ router.put("/:id", requireAuth, async (req: any, res: any) => {
       quantity AS "currentStock",
       unit,
       reorder_level AS "minStock",
-      cost_per_unit AS "costPerUnit",
-      last_restocked AS "lastRestocked",
-      expiry_date AS "expiryDate",
       created_at, updated_at
     `,
-    [id, name, sku, unit, currentStock, minStock, costPerUnit, lastRestocked, expiryDate]
+    [id, name, sku, unit, currentStock, minStock]
   );
 
   res.json(rows[0]);
@@ -117,7 +108,7 @@ router.delete('/:id', requireAuth, async (req: any, res: any) => {
     const { id } = req.params;
     
     const result = await query(`
-      DELETE FROM inventory
+      DELETE FROM inventory_items
       WHERE id = $1
       RETURNING *
     `, [id]);

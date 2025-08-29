@@ -102,6 +102,20 @@ export async function runMigrations() {
     ON CONFLICT (email) DO NOTHING;
   `);
 
+  // Seed suppliers (idempotent)
+  await run(`
+    INSERT INTO suppliers (name, contact, email, address, categories, rating, is_active)
+    VALUES ('Fresh Farms','Noah','noah@freshfarms.test','12 Market St', ARRAY['produce'], 4.5, TRUE)
+    ON CONFLICT DO NOTHING;
+  `);
+  
+  // Seed inventory items (idempotent)
+  await run(`
+    INSERT INTO inventory_items (name, sku, quantity, unit, reorder_level)
+    VALUES ('Tomatoes','SKU-TOM-001',120,'kg',40)
+    ON CONFLICT DO NOTHING;
+  `);
+
   console.log("✅ Migrations complete");
 }
 

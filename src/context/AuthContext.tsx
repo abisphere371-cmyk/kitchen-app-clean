@@ -82,6 +82,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
           console.log('✅ Authentication successful! Setting user:', authenticatedUser);
           setUser(authenticatedUser);
+          // tell the rest of the app that auth changed
+          window.dispatchEvent(new Event('auth:login'));
           return true;
         }
       }
@@ -107,6 +109,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('Error logging out:', error);
     }
     setUser(null);
+    window.dispatchEvent(new Event('auth:logout'));
     console.log('👋 User logged out');
   };
 

@@ -135,7 +135,7 @@ router.get('/:id/items', requireAuth, async (req, res) => {
     const result = await query(`
       SELECT poi.*, i.name as item_name
       FROM purchase_order_items poi
-      LEFT JOIN inventory i ON poi.item_id = i.id
+      LEFT JOIN inventory_items i ON poi.item_id = i.id
       WHERE poi.purchase_order_id = $1
       ORDER BY i.name
     `, [req.params.id]);
