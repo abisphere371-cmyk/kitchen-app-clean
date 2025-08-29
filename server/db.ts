@@ -54,3 +54,8 @@ export async function query<T = any>(text: string, params?: any[]) {
   const res = await pool.query<T>(text, params);
   return res;
 }
+// Test connection
+export async function testConnection() {
+  // simple ping
+  await pool.query('select 1');
+}
