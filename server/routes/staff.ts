@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { z } from 'zod';
@@ -141,6 +142,49 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
     res.status(204).send();
   } catch (err) {
     console.error('Delete staff error:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Toggle active
+router.patch('/:id/active', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { is_active } = req.body ?? {};
+    if (typeof is_active !== 'boolean') return res.status(400).json({ error: 'is_active_boolean_required' });
+
+    const { rows } = await pool.query(
+      `UPDATE staff_members SET active = $1, updated_at = NOW() WHERE id = $2
+       RETURNING id, name, email, phone, role, department, salary, active, created_at, updated_at`,
+      [is_active, id]
+    );
+
+    if (!rows[0]) return res.status(404).json({ error: 'not_found' });
+    res.json({ staff: rows[0] });
+  } catch (err) {
+    console.error('Toggle staff active error:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Reset password (admin only) → returns a new ONE-TIME temp password
+router.post('/:id/reset-password', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const staffRes = await pool.query(`SELECT id, name, email FROM staff_members WHERE id = $1`, [id]);
+    const staff = staffRes.rows[0];
+    if (!staff) return res.status(404).json({ error: 'not_found' });
+    if (!staff.email) return res.status(400).json({ error: 'staff_missing_email' });
+
+    const tempPassword = crypto.randomBytes(4).toString('hex');
+    const hash = await bcrypt.hash(tempPassword, 10);
+
+    await pool.query(`UPDATE users SET password_hash = $1 WHERE email = $2`, [hash, staff.email]);
+    await pool.query(`INSERT INTO staff_password_resets(staff_id) VALUES ($1)`, [id]);
+
+    res.json({ ok: true, tempPassword });
+  } catch (err) {
+    console.error('Reset staff password error:', err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

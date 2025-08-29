@@ -168,4 +168,50 @@ export async function runMigrations() {
            (SELECT id FROM suppliers ORDER BY created_at ASC LIMIT 1)
     WHERE NOT EXISTS (SELECT 1 FROM inventory_items);
   `);
+  
+  // --- Additional tables and columns ---
+  await exec(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  
+  await exec(`
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name TEXT NOT NULL,
+      contact_name TEXT,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  
+  await exec(`
+    ALTER TABLE staff ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+  `);
+  
+  await exec(`
+    ALTER TABLE staff ADD COLUMN IF NOT EXISTS email TEXT;
+  `);
+  
+  await exec(`
+    ALTER TABLE staff ADD COLUMN IF NOT EXISTS phone TEXT;
+  `);
+  
+  await exec(`
+    CREATE TABLE IF NOT EXISTS staff_password_resets (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      used BOOLEAN NOT NULL DEFAULT FALSE
+    );
+  `);
 }
