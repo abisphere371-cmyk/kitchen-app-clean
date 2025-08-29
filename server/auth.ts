@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import bcrypt from 'bcryptjs';
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from "express";
 
 export type UserPayload = {
   id: string;
@@ -31,18 +31,30 @@ export const comparePassword = async (password: string, hash: string) => {
   return await bcrypt.compare(password, hash);
 };
 
+function getToken(req: Request): string | null {
+  const hdr = req.headers.authorization;
+  if (hdr?.startsWith("Bearer ")) return hdr.slice(7);
+
+  // read from cookies (support old names too)
+  const c = req.cookies || {};
+  return (
+    c["auth_token"] ||
+    c["token"] ||
+    c["auth"] ||
+    null
+  );
+}
+
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const token =
-    req.cookies?.token ||
-    (req.headers.authorization?.startsWith('Bearer ')
-      ? req.headers.authorization.slice(7)
-      : undefined);
-  if (!token) return res.status(401).json({ error: 'unauthorized' });
+  const token = getToken(req);
+  if (!token) return res.status(401).json({ error: "unauthorized" });
+
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET!) as UserPayload;
-    (req as any).user = payload;
-    next();
+    const payload = jwt.verify(token, process.env.JWT_SECRET!);
+    // @ts-ignore
+    req.user = payload;               // make available to routes
+    return next();
   } catch {
-    return res.status(401).json({ error: 'unauthorized' });
+    return res.status(401).json({ error: "unauthorized" });
   }
 };

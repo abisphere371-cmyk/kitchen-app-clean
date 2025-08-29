@@ -19,17 +19,20 @@ import { runMigrations } from './migrate.js';   // ✅ correct path
 
 const app = express();
 
-// very important behind Railway proxy so "secure" cookies work
-app.set('trust proxy', 1);
+// trust proxy so `secure` cookies work behind Railway's proxy
+app.set("trust proxy", 1);
 
+const ORIGIN = process.env.VITE_API_BASE_URL || process.env.CLIENT_ORIGIN || undefined;
+// If frontend is the same origin, you can even disable cors for /api.
+// If you use CORS, configure it for credentials:
 app.use(cors({
-  origin: true,         // reflect request origin
-  credentials: true,    // allow cookies/authorization headers
+  origin: ORIGIN ?? true,   // or explicitly "https://<your-app>.up.railway.app"
+  credentials: true,
 }));
 
-app.use(morgan('dev'));
 app.use(express.json());
 app.use(cookieParser());
+app.use(morgan('dev'));
 
 // API routes
 app.use('/api/auth', authRoutes);

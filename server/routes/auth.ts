@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { query } from '../db.js';
 import { signJwt, comparePassword, requireAuth } from '../auth.js';
 import type { UserPayload } from '../auth.js';
+import jwt from "jsonwebtoken";
+import type { Request, Response } from "express";
 
 const router = Router();
 
@@ -37,16 +39,17 @@ router.post('/login', async (req: any, res: any) => {
     const token = signJwt({ id: user.id, email: user.email, role: user.role, name: user.name ?? null });
 
     // Set the auth cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      sameSite: 'lax',      // same-origin app: 'lax' is fine; if cross-origin use 'none'
-      secure: process.env.NODE_ENV === 'production',         // Railway is HTTPS; requires app.set('trust proxy', 1)
-      maxAge: 1000 * 60 * 60 * 8, // 8h
-    });
+    const isProd = process.env.NODE_ENV === "production";
+    const ONE_DAY = 24 * 60 * 60 * 1000;
 
-    // minimal user shape used by the frontend
-    const safeUser = { id: user.id, email: user.email, role: user.role, name: user.name ?? null };
-    return res.json({ user: safeUser });
+    res.cookie("auth_token", token, {
+      httpOnly: true,
+      secure: isProd,          // true in prod (Railway is HTTPS)
+      sameSite: "lax",         // works for same-origin
+      path: "/",               // make sure all /api routes see it
+      maxAge: ONE_DAY,
+    });
+    res.json({ ok: true });
   } catch (err: any) {
     if (err instanceof z.ZodError) {
       return res.status(400).json({ message: 'Validation error', errors: err.errors });
@@ -63,9 +66,9 @@ router.get("/me", requireAuth, async (req: any, res: any) => {
 });
 
 // POST /api/auth/logout
-router.post("/logout", (req, res) => {
-  res.clearCookie('token');
-  return res.status(200).json({ message: 'Logged out successfully' });
+router.post("/logout", (req: Request, res: Response) => {
+  res.clearCookie("auth_token", { path: "/" });
+  res.json({ ok: true });
 });
 
 export default router;
