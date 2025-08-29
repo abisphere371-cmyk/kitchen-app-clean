@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
-import { pool, testConnection } from './db.js';
+import { testConnection } from './db.js';
 import authRoutes from './routes/auth.js';
 import customerRoutes from './routes/customers.js';
 import inventoryRoutes from './routes/inventory.js';

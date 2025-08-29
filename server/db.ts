@@ -1,18 +1,17 @@
 // server/db.ts
-import pg, { QueryResult, QueryResultRow } from 'pg';
+import pg, { QueryResult, QueryResultRow } from "pg";
 
-const {
-  DATABASE_URL,
-  PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE,
-} = process.env;
+const { DATABASE_URL, PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE } = process.env;
 
-const isExternalUrl = !!DATABASE_URL && /^postgres(ql)?:\/\//i.test(DATABASE_URL);
+// If DATABASE_URL is set, prefer it. Otherwise fall back to discrete PG* vars.
+const useUrl = !!DATABASE_URL && /^postgres(ql)?:\/\//i.test(DATABASE_URL || "");
 
 export const pool = new pg.Pool(
-  DATABASE_URL
+  useUrl
     ? {
-        connectionString: DATABASE_URL,
-        ssl: isExternalUrl ? { rejectUnauthorized: false } : undefined,
+        connectionString: DATABASE_URL!,
+        // External providers usually require SSL but allow self-signed certs
+        ssl: { rejectUnauthorized: false },
       }
     : {
         host: PGHOST,
@@ -20,13 +19,21 @@ export const pool = new pg.Pool(
         user: PGUSER,
         password: PGPASSWORD,
         database: PGDATABASE,
-        ssl: (PGHOST && !/\.internal$/.test(PGHOST)) ? { rejectUnauthorized: false } : undefined,
+        // If host looks external (not *.internal), enable SSL
+        ssl: PGHOST && !/\.internal$/.test(PGHOST) ? { rejectUnauthorized: false } : undefined,
       }
 );
 
+// Typed query helper that works with pg types
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params: any[] = []
 ): Promise<QueryResult<T>> {
   return pool.query<T>(text, params);
+}
+
+// ✅ Export the symbol your index.ts is importing
+export async function testConnection(): Promise<boolean> {
+  const r = await pool.query<{ ok: number }>("SELECT 1 AS ok");
+  return r.rows[0]?.ok === 1;
 }
