@@ -43,16 +43,43 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   updated_at TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS orders (
+CREATE TABLE IF NOT EXISTS stock_movements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  inventory_item_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+  quantity NUMERIC NOT NULL,
+  type TEXT NOT NULL,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+`;
+
+// More robust orders migration that handles existing tables
+const ORDERS_SQL = `
+BEGIN;
+
+-- 1) Create table if missing (include order_number from day one)
+CREATE TABLE IF NOT EXISTS orders (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id UUID,
-  status TEXT NOT NULL DEFAULT 'pending',
-  total NUMERIC DEFAULT 0,
-  order_number TEXT UNIQUE,             -- <— add
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ
+  status      TEXT NOT NULL DEFAULT 'pending',
+  total       NUMERIC DEFAULT 0,
+  order_number TEXT,                                  -- keep UNIQUE later
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ
 );
 
+-- 2) If table existed without the column, add it
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'orders' AND column_name = 'order_number'
+  ) THEN
+    ALTER TABLE orders ADD COLUMN order_number TEXT;
+  END IF;
+END$$;
+
+-- 3) Ensure sequence and generator function exist
 CREATE SEQUENCE IF NOT EXISTS order_num_seq START 1001;
 
 CREATE OR REPLACE FUNCTION generate_order_number() RETURNS TEXT AS $$
@@ -62,18 +89,22 @@ DECLARE
 BEGIN
   RETURN 'ORD-' || yyyymm || '-' || lpad(n::TEXT, 4, '0');
 END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+$$ LANGUAGE plpgsql;
 
+-- 4) Only now set the default (column is guaranteed to exist)
 ALTER TABLE orders
   ALTER COLUMN order_number SET DEFAULT generate_order_number();
-CREATE TABLE IF NOT EXISTS stock_movements (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  inventory_item_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
-  quantity NUMERIC NOT NULL,
-  type TEXT NOT NULL,
-  note TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+
+-- 5) Backfill NULLs so existing rows are valid
+UPDATE orders
+SET order_number = generate_order_number()
+WHERE order_number IS NULL;
+
+-- 6) Enforce uniqueness + index
+ALTER TABLE orders
+  ADD CONSTRAINT orders_order_number_key UNIQUE (order_number);
+
+COMMIT;
 `;
 
 const SEED = `
@@ -95,6 +126,7 @@ ON CONFLICT DO NOTHING;
 export async function runMigrations(): Promise<void> {
   console.log("Starting database migrations...");
   await query(SQL);
+  await query(ORDERS_SQL);
   await query(SEED);
   console.log("✅ Migrations complete");
 }
