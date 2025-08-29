@@ -1,132 +1,221 @@
 ﻿// server/scripts/migrate.ts
-import { query } from "../db.js";
+import { pool } from '../db';
 
-const SQL = `
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+export async function runMigrations() {
+  const client = await pool.connect();
+  try {
+    console.log('Starting database migrations...');
+    await client.query('BEGIN');
 
-CREATE TABLE IF NOT EXISTS users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'admin',
-  name TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ
-);
+    // --- extensions ---
+    await client.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
+    await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
 
-CREATE TABLE IF NOT EXISTS suppliers (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  contact TEXT,
-  email TEXT,
-  address TEXT,
-  categories TEXT[] NOT NULL DEFAULT '{}',
-  rating NUMERIC,
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ
-);
+    // --- helper sequence + function for order numbers (ORD-YYYYMMDD-XXXX) ---
+    await client.query(`CREATE SEQUENCE IF NOT EXISTS order_number_seq;`);
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_proc WHERE proname = 'generate_order_number'
+        ) THEN
+          CREATE OR REPLACE FUNCTION generate_order_number()
+          RETURNS text AS $fn$
+          DECLARE
+            n bigint := nextval('order_number_seq');
+          BEGIN
+            RETURN 'ORD-' || to_char(now(), 'YYYYMMDD') || '-' || lpad(n::text, 4, '0');
+          END
+          $fn$ LANGUAGE plpgsql;
+        END IF;
+      END
+      $$;
+    `);
 
-CREATE TABLE IF NOT EXISTS inventory_items (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  sku TEXT,
-  supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL,
-  current_stock NUMERIC NOT NULL DEFAULT 0,
-  unit TEXT,
-  cost_per_unit NUMERIC,
-  min_stock NUMERIC DEFAULT 0,
-  max_stock NUMERIC,
-  last_restocked TIMESTAMPTZ,
-  expiry_date TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ
-);
+    // --- core tables ---
 
-CREATE TABLE IF NOT EXISTS stock_movements (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  inventory_item_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
-  quantity NUMERIC NOT NULL,
-  type TEXT NOT NULL,
-  note TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-`;
+    // users (auth)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        email         text UNIQUE NOT NULL,
+        password_hash text NOT NULL,
+        role          text NOT NULL,           // don't over-constrain; app uses many roles
+        name          text,
+        active        boolean NOT NULL DEFAULT true,
+        created_at    timestamptz NOT NULL DEFAULT now(),
+        updated_at    timestamptz NOT NULL DEFAULT now()
+      );
+    `);
 
-// More robust orders migration that handles existing tables
-const ORDERS_SQL = `
-BEGIN;
+    // suppliers
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS suppliers (
+        id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        name        text NOT NULL,
+        email       text,
+        phone       text,
+        address     text,
+        notes       text,
+        is_active   boolean NOT NULL DEFAULT true,
+        created_at  timestamptz NOT NULL DEFAULT now(),
+        updated_at  timestamptz NOT NULL DEFAULT now()
+      );
+    `);
 
--- 1) Create table if missing (include order_number from day one)
-CREATE TABLE IF NOT EXISTS orders (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  customer_id UUID,
-  status      TEXT NOT NULL DEFAULT 'pending',
-  total       NUMERIC DEFAULT 0,
-  order_number TEXT,                                  -- keep UNIQUE later
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ
-);
+    // customers
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS customers (
+        id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        name         text NOT NULL,
+        email        text,
+        phone        text,
+        addresses    jsonb,
+        preferences  jsonb,
+        created_at   timestamptz NOT NULL DEFAULT now(),
+        updated_at   timestamptz NOT NULL DEFAULT now()
+      );
+    `);
 
--- 2) If table existed without the column, add it
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'orders' AND column_name = 'order_number'
-  ) THEN
-    ALTER TABLE orders ADD COLUMN order_number TEXT;
-  END IF;
-END$$;
+    // inventory_items (this is where the app currently expects `quantity`)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS inventory_items (
+        id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        name           text NOT NULL,
+        sku            text,
+        category       text,
+        unit           text,
+        quantity       integer NOT NULL DEFAULT 0,      // <- app expects this
+        min_stock      integer NOT NULL DEFAULT 0,
+        max_stock      integer NOT NULL DEFAULT 0,
+        cost_per_unit  numeric(12,2) NOT NULL DEFAULT 0,
+        last_restocked timestamptz,
+        expiry_date    date,
+        supplier_id    uuid REFERENCES suppliers(id) ON DELETE SET NULL,
+        location       text,
+        created_at     timestamptz NOT NULL DEFAULT now(),
+        updated_at     timestamptz NOT NULL DEFAULT now()
+      );
+    `);
 
--- 3) Ensure sequence and generator function exist
-CREATE SEQUENCE IF NOT EXISTS order_num_seq START 1001;
+    // stock_movements (references inventory_items)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS stock_movements (
+        id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        item_id       uuid NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+        delta         integer NOT NULL,                // +restock / -consumption
+        movement_type text,                            // e.g. 'restock','use','waste','adjustment'
+        reference     text,                            // free-form reference (order, note, etc.)
+        created_by    uuid REFERENCES users(id),
+        created_at    timestamptz NOT NULL DEFAULT now()
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_stock_movements_item ON stock_movements(item_id);`);
 
-CREATE OR REPLACE FUNCTION generate_order_number() RETURNS TEXT AS $$
-DECLARE
-  yyyymm TEXT := to_char(NOW(), 'YYYYMM');
-  n BIGINT := nextval('order_num_seq');
-BEGIN
-  RETURN 'ORD-' || yyyymm || '-' || lpad(n::TEXT, 4, '0');
-END;
-$$ LANGUAGE plpgsql;
+    // recipes (kept simple; ingredients stored as JSON mapping item_id->qty)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS recipes (
+        id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        name         text NOT NULL,
+        description  text,
+        ingredients  jsonb,         // [{ item_id, quantity, unit }]
+        instructions text,
+        cost         numeric(12,2),
+        price        numeric(12,2),
+        created_at   timestamptz NOT NULL DEFAULT now(),
+        updated_at   timestamptz NOT NULL DEFAULT now()
+      );
+    `);
 
--- 4) Only now set the default (column is guaranteed to exist)
-ALTER TABLE orders
-  ALTER COLUMN order_number SET DEFAULT generate_order_number();
+    // orders + order_items
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_number  text UNIQUE,                     // app calls generate_order_number()
+        status        text NOT NULL DEFAULT 'pending',
+        customer_id   uuid REFERENCES customers(id) ON DELETE SET NULL,
+        total_amount  numeric(12,2) NOT NULL DEFAULT 0,
+        notes         text,
+        created_at    timestamptz NOT NULL DEFAULT now(),
+        updated_at    timestamptz NOT NULL DEFAULT now()
+      );
+    `);
 
--- 5) Backfill NULLs so existing rows are valid
-UPDATE orders
-SET order_number = generate_order_number()
-WHERE order_number IS NULL;
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS order_items (
+        id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id    uuid NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        recipe_id   uuid REFERENCES recipes(id) ON DELETE SET NULL,
+        quantity    integer NOT NULL DEFAULT 1,
+        unit_price  numeric(12,2) NOT NULL DEFAULT 0,
+        created_at  timestamptz NOT NULL DEFAULT now()
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);`);
 
--- 6) Enforce uniqueness + index
-ALTER TABLE orders
-  ADD CONSTRAINT orders_order_number_key UNIQUE (order_number);
+    // purchase_orders (optional but present in routes)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS purchase_orders (
+        id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        supplier_id  uuid REFERENCES suppliers(id) ON DELETE SET NULL,
+        order_date   date NOT NULL DEFAULT CURRENT_DATE,
+        status       text NOT NULL DEFAULT 'open',
+        items        jsonb,                            // [{ item_id, quantity, cost_per_unit }]
+        notes        text,
+        created_at   timestamptz NOT NULL DEFAULT now(),
+        updated_at   timestamptz NOT NULL DEFAULT now()
+      );
+    `);
 
-COMMIT;
-`;
+    // delivery_confirmations (referenced by routes)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS delivery_confirmations (
+        id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id      uuid NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        delivered_at  timestamptz NOT NULL DEFAULT now(),
+        notes         text,
+        confirmed_by  uuid REFERENCES users(id),
+        created_at    timestamptz NOT NULL DEFAULT now()
+      );
+    `);
 
-const SEED = `
-INSERT INTO users (email, password_hash, role, name)
-VALUES ('admin@example.com', crypt('admin123', gen_salt('bf')), 'admin', 'Admin')
-ON CONFLICT (email) DO NOTHING;
+    // --- add-any-missing columns to match the code (idempotent) ---
 
-INSERT INTO suppliers (name, contact, email, address, categories, rating)
-VALUES ('Default Supplier', 'John', 'supplier@example.com', 'Main st', ARRAY['general'], 5)
-ON CONFLICT DO NOTHING;
+    // orders.order_number
+    await client.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_number text UNIQUE;`);
+    // inventory_items.quantity (your error)
+    await client.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS quantity integer NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS cost_per_unit numeric(12,2) NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS min_stock integer NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS max_stock integer NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS last_restocked timestamptz;`);
+    await client.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS expiry_date date;`);
 
-INSERT INTO inventory_items (name, sku, current_stock, unit, cost_per_unit, min_stock, supplier_id)
-SELECT 'Sample Rice', 'RICE-001', 50, 'kg', 2.5, 10, s.id
-FROM suppliers s
-WHERE s.name = 'Default Supplier'
-ON CONFLICT DO NOTHING;
-`;
+    // users.active (front-end expects isActive from active)
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS name   text;`);
 
-export async function runMigrations(): Promise<void> {
-  console.log("Starting database migrations...");
-  await query(SQL);
-  await query(ORDERS_SQL);
-  await query(SEED);
-  console.log("✅ Migrations complete");
+    // --- seed admin user (idempotent) ---
+    await client.query(`
+      INSERT INTO users (email, password_hash, role, name, active)
+      VALUES (
+        'admin@example.com',
+        // bcrypt hash for 'admin123' (cost 10). Replace if you changed it.
+        '$2a$10$Qb3Tx3vRzL8a3w3w3d7bXu2r4Ck0e8J5y3mV6dQ61Q0g7Q1yR4l.S',
+        'admin',
+        'Admin',
+        true
+      )
+      ON CONFLICT (email) DO NOTHING;
+    `);
+
+    await client.query('COMMIT');
+    console.log('Migrations complete');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Migration process failed:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
