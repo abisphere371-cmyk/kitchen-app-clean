@@ -1,11 +1,18 @@
-import jwt from 'jsonwebtoken';
+import jwt from "jsonwebtoken";
 import bcrypt from 'bcryptjs';
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+
+export type UserPayload = {
+  id: string;
+  email: string;
+  role: string;
+  name?: string;
+};
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret';
 
-export function signJwt(payload: Express.UserPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+export function signJwt(user: UserPayload): string {
+  return jwt.sign(user, JWT_SECRET, { expiresIn: '7d' });
 }
 
 export const verifyJwt = (token: string) => {
@@ -24,20 +31,15 @@ export const comparePassword = async (password: string, hash: string) => {
   return await bcrypt.compare(password, hash);
 };
 
-export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'No token provided' });
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return res.status(401).json({ error: "Missing token" });
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET!) as UserPayload;
+    (req as any).user = payload;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Invalid token" });
   }
-
-  const token = authHeader.substring(7);
-  const decoded = verifyJwt(token);
-
-  if (!decoded) {
-    return res.status(401).json({ message: 'Invalid token' });
-  }
-
-  req.user = decoded as Express.UserPayload;
-  next();
 };

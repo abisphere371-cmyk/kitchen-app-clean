@@ -17,11 +17,11 @@ const createStaffSchema = z.object({
 });
 
 // GET all staff
-router.get('/', requireAuth, async (_req, res) => {
+router.get('/', requireAuth, async (_req: any, res: any) => {
   try {
     const result = await query(`
       SELECT u.id, u.email, u.role, u.name,
-             sm.phone, sm.department, sm.salary, sm.active, sm.created_at, sm.updated_at
+             sm.phone, sm.department, sm.salary, sm.active AS "isActive", sm.created_at, sm.updated_at
       FROM users u
       LEFT JOIN staff_members sm ON sm.id = u.id
       WHERE u.role IN ('admin', 'kitchen_staff', 'inventory_manager', 'delivery_staff')

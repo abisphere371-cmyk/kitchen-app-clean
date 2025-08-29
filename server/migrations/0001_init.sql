@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin','staff')),
+  role TEXT NOT NULL CHECK (role IN ('admin','staff','kitchen_staff','inventory_manager','delivery_staff','manager')),
   name TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -76,11 +76,12 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   sku TEXT,
   qty NUMERIC(12,3) NOT NULL DEFAULT 0,
   unit TEXT NOT NULL,
-  cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+  cost_per_unit NUMERIC(12,2) DEFAULT 0,
   category TEXT,
   supplier TEXT,
-  min_stock NUMERIC(12,3) DEFAULT 0,
-  max_stock NUMERIC(12,3) DEFAULT 0,
+  reorder_level NUMERIC(12,3) DEFAULT 0,
+  last_restocked TIMESTAMPTZ,
+  expiry_date DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -88,8 +89,9 @@ CREATE TABLE IF NOT EXISTS inventory_items (
 CREATE TABLE IF NOT EXISTS stock_movements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   inventory_item_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
-  change NUMERIC(12,3) NOT NULL,
-  reason TEXT,
+  quantity NUMERIC(12,3) NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('in', 'out')),
+  note TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -97,14 +99,9 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id UUID REFERENCES customers(id),
-  customer_name TEXT NOT NULL,
-  customer_phone TEXT NOT NULL,
-  customer_email TEXT,
-  delivery_address TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
-  total NUMERIC(12,2) NOT NULL,
-  special_instructions TEXT,
-  payment_method TEXT,
+  total NUMERIC(12,2) NOT NULL DEFAULT 0,
+  order_number TEXT UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

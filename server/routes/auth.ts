@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { query } from '../db.js';
-import { signJwt, comparePassword } from '../auth.js';
+import { signJwt, comparePassword, requireAuth } from '../auth.js';
+import type { UserPayload } from '../auth.js';
 
 const router = Router();
 
@@ -11,7 +12,7 @@ const credentialsSchema = z.object({
   password: z.string().min(1),
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', async (req: any, res: any) => {
   try {
     const body = credentialsSchema.parse(req.body);
     const email = (body.email ?? body.username)?.toLowerCase();
@@ -33,14 +34,14 @@ router.post('/login', async (req, res) => {
     const ok = await comparePassword(body.password, user.password_hash);
     if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const token = signJwt({ id: user.id, email: user.email, role: user.role });
+    const token = signJwt({ id: user.id, email: user.email, role: user.role, name: user.name ?? null });
 
     // minimal user shape used by the frontend
     return res.json({
       access_token: token,
       user: { id: user.id, email: user.email, role: user.role, name: user.name ?? null },
     });
-  } catch (err) {
+  } catch (err: any) {
     if (err instanceof z.ZodError) {
       return res.status(400).json({ message: 'Validation error', errors: err.errors });
     }
@@ -49,9 +50,10 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/me', async (req, res) => {
-  // If you added requireAuth here, you can decode from req.user
-  return res.json({ user: null });
+// GET /api/auth/me
+router.get("/me", requireAuth, async (req: any, res: any) => {
+  const user = req.user as UserPayload;
+  return res.json({ user });
 });
 
 export default router;

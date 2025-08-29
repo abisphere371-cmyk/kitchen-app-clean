@@ -41,7 +41,7 @@ export function StaffManagement() {
       salary: member.salary || 25000,
       department: member.department,
       username: member.username,
-      password: member.password_hash || 'password123'
+      password: '••••••••' // Don't expose password hashes
     }));
     setStaff(staffWithCredentials);
   }, [staffMembers]);
