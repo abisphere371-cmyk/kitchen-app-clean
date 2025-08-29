@@ -1,3 +1,4 @@
+import 'express-async-errors';                   // <-- add this first
 import 'dotenv/config';
 import express from 'express';
 import morgan from 'morgan';
