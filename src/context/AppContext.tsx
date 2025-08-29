@@ -292,7 +292,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (result.success) {
         const newMovement: StockMovement = {
           id: result.data.id,
-          inventoryItemId: result.data.inventory_item_id,
+          inventoryItemId: result.data.inventory_id,
           movementType: result.data.movement_type,
           quantity: result.data.quantity,
           reason: result.data.reason,

@@ -16,22 +16,22 @@ router.post("/", requireAuth, async (req: any, res: any) => {
     // record the movement
     await client.query(
       `
-      INSERT INTO stock_movements (inventory_item_id, quantity, type, note)
+      INSERT INTO stock_movements (inventory_id, quantity, type, note)
       VALUES ($1, $2, $3, $4)
       `,
       [inventoryId, quantity, type, note || null]
     );
 
-    // adjust inventory.qty
+    // adjust inventory.quantity
     const delta = type === "in" ? +quantity : -quantity;
     const { rows } = await client.query(
       `
-      UPDATE inventory_items
-      SET qty = GREATEST(0, qty + $2),
+      UPDATE inventory
+      SET quantity = GREATEST(0, quantity + $2),
           last_restocked = CASE WHEN $3 THEN NOW() ELSE last_restocked END,
           updated_at = NOW()
       WHERE id = $1
-      RETURNING id, name, sku, qty AS "currentStock", unit, reorder_level AS "minStock";
+      RETURNING id, name, sku, quantity AS "currentStock", unit, reorder_level AS "minStock";
       `,
       [inventoryId, delta, type === "in"]
     );

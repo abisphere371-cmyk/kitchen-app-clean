@@ -24,13 +24,13 @@ async function main() {
   `);
 
   // INVENTORY – ensure columns your routes/FE need
-  await run(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS sku TEXT;`);
-  await run(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS unit TEXT;`);
-  await run(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS reorder_level NUMERIC DEFAULT 0;`);
+  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS sku TEXT;`);
+  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS unit TEXT;`);
+  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS reorder_level NUMERIC DEFAULT 0;`);
   // optional: if your FE expects these names, keep them null-safe
-  await run(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS cost_per_unit NUMERIC;`);
-  await run(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS last_restocked TIMESTAMPTZ;`);
-  await run(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS expiry_date DATE;`);
+  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS cost_per_unit NUMERIC;`);
+  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS last_restocked TIMESTAMPTZ;`);
+  await run(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS expiry_date DATE;`);
 
   // ORDERS – add order_number if missing
   await run(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_number TEXT UNIQUE;`);
@@ -46,7 +46,7 @@ async function main() {
       ) THEN
         ALTER TABLE stock_movements
         ADD CONSTRAINT stock_movements_inventory_id_fkey
-        FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id) ON DELETE CASCADE;
+        FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE;
       END IF;
     END$$;
   `);

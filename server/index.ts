@@ -16,6 +16,9 @@ import ordersRoutes from './routes/orders.js';
 import staffRoutes from './routes/staff.js';
 import suppliersRoutes from './routes/suppliers.js';
 import stockMovementsRoutes from './routes/stockMovements.js';
+import recipesRoutes from './routes/recipes.js';
+import deliveryConfirmationsRoutes from './routes/deliveryConfirmations.js';
+import purchaseOrdersRoutes from './routes/purchaseOrders.js';
 import { runMigrations } from './migrate.js';   // ✅ correct path
 
 const app = express();
@@ -35,6 +38,9 @@ app.use('/api/orders', ordersRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/suppliers', suppliersRoutes);
 app.use('/api/stock-movements', stockMovementsRoutes);
+app.use('/api/recipes', recipesRoutes);
+app.use('/api/delivery-confirmations', deliveryConfirmationsRoutes);
+app.use('/api/purchase-orders', purchaseOrdersRoutes);
 
 // Health
 app.get('/health', (_req, res) => res.status(200).json({ ok: true }));

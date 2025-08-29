@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS inventory (
   quantity NUMERIC NOT NULL DEFAULT 0,
   unit TEXT,
   reorder_level NUMERIC DEFAULT 0,
+  cost_per_unit NUMERIC,
+  last_restocked TIMESTAMPTZ,
+  expiry_date DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ
 );
@@ -83,7 +86,8 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   quantity NUMERIC NOT NULL,
   type TEXT NOT NULL,
   note TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
 );
 
 -- Seed admin (idempotent)

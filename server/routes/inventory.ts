@@ -12,7 +12,7 @@ router.get("/", requireAuth, async (_req: any, res: any) => {
       id,
       name,
       sku,
-      qty            AS "currentStock",
+      quantity       AS "currentStock",
       unit,
       reorder_level       AS "minStock",
       cost_per_unit       AS "costPerUnit",
@@ -21,7 +21,7 @@ router.get("/", requireAuth, async (_req: any, res: any) => {
       expiry_date         AS "expiryDate",
       created_at,
       updated_at
-    FROM inventory_items
+    FROM inventory
     ORDER BY name ASC;
   `);
   res.json(rows);
@@ -51,13 +51,13 @@ router.post("/", requireAuth, async (req: any, res: any) => {
 
   const { rows } = await query(
     `
-    INSERT INTO inventory_items
-      (name, sku, unit, qty, reorder_level, cost_per_unit, last_restocked, expiry_date)
+    INSERT INTO inventory
+      (name, sku, unit, quantity, reorder_level, cost_per_unit, last_restocked, expiry_date)
     VALUES
       ($1,   $2,  $3,  $4,       $5,            $6,            $7,             $8)
     RETURNING
       id, name, sku,
-      qty AS "currentStock",
+      quantity AS "currentStock",
       unit,
       reorder_level AS "minStock",
       cost_per_unit AS "costPerUnit",
@@ -84,11 +84,11 @@ router.put("/:id", requireAuth, async (req: any, res: any) => {
 
   const { rows } = await query(
     `
-    UPDATE inventory_items SET
+    UPDATE inventory SET
       name = COALESCE($2, name),
       sku = COALESCE($3, sku),
       unit = COALESCE($4, unit),
-      qty = COALESCE($5, qty),
+      quantity = COALESCE($5, quantity),
       reorder_level = COALESCE($6, reorder_level),
       cost_per_unit = COALESCE($7, cost_per_unit),
       last_restocked = COALESCE($8, last_restocked),
@@ -97,7 +97,7 @@ router.put("/:id", requireAuth, async (req: any, res: any) => {
     WHERE id = $1
     RETURNING
       id, name, sku,
-      qty AS "currentStock",
+      quantity AS "currentStock",
       unit,
       reorder_level AS "minStock",
       cost_per_unit AS "costPerUnit",
@@ -117,7 +117,7 @@ router.delete('/:id', requireAuth, async (req: any, res: any) => {
     const { id } = req.params;
     
     const result = await query(`
-      DELETE FROM inventory_items
+      DELETE FROM inventory
       WHERE id = $1
       RETURNING *
     `, [id]);
