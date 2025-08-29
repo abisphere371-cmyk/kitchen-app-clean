@@ -39,14 +39,17 @@ router.post('/login', async (req: any, res: any) => {
     const token = signJwt({ id: user.id, email: user.email, role: user.role, name: user.name ?? null });
 
     // Set the auth cookie
-    res.cookie('auth_token', token, {
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    const isProd = process.env.NODE_ENV === "production";
+
+    res.cookie("auth", token, {
       httpOnly: true,
-      sameSite: 'none',     // cross-site cookie works on HTTPS
-      secure: true,         // Railway is HTTPS => must be true
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      secure: isProd,      // true on Railway
+      sameSite: "none",    // cross-site allowed
+      path: "/",
+      maxAge: oneWeek,
     });
-    res.json({ ok: true });
+    res.json({ user: { id: user.id, email: user.email, role: user.role, name: user.name } });
   } catch (err: any) {
     if (err instanceof z.ZodError) {
       return res.status(400).json({ message: 'Validation error', errors: err.errors });
@@ -64,7 +67,7 @@ router.get("/me", requireAuth, async (req: any, res: any) => {
 
 // POST /api/auth/logout
 router.post("/logout", (req: Request, res: Response) => {
-  res.clearCookie("auth_token", { path: "/" });
+  res.clearCookie("auth", { path: "/" });
   res.json({ ok: true });
 });
 
