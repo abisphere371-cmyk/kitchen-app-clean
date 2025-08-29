@@ -210,8 +210,12 @@ export function InventoryUsage() {
           <h3 className="text-lg font-medium text-red-800">Error Loading Inventory</h3>
         </div>
         <p className="text-red-700 mt-2">{error}</p>
-        <button 
-          onClick={() => window.location.reload()}
+        {/* TODO: Implement proper retry mechanism without page reload */}
+        <button
+          onClick={() => {
+            // TODO: Re-fetch inventory data
+            console.log('Retry button clicked - implement data refetch');
+          }}
           className="mt-4 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
         >
           Retry

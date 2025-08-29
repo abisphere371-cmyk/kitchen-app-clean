@@ -1,69 +1,58 @@
 // src/lib/dataClient.ts
 // Pure REST client for your Express API (no Supabase paths)
 
-import axios from 'axios';
-import { getToken, setToken, clearToken } from './token';
-
-// --- Axios instance ---
-const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '', // keep '' so '/api/*' is same-origin in prod
-  timeout: 10000
-});
-
-// Attach auth token
-apiClient.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-// Global 401 handler
-apiClient.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    if (err?.response?.status === 401) {
-      clearToken();
-      // don't reload the page
-      throw new Error('unauthorized');
-    }
-    return Promise.reject(err);
-  }
-);
-
 // --- Helpers ---
-const unwrap = <T = any>(p: Promise<{ data: T }>) =>
-  p.then((r) => r.data);
+const BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    // ensure cookies (session) get sent on every request
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+  if (!res.ok) {
+    // bubble up "unauthorized" nicely for UI
+    const text = await res.text().catch(() => '');
+    throw new Error(text || res.statusText);
+  }
+  // 204 may have no body
+  return (res.status === 204 ? (undefined as unknown as T) : await res.json());
+}
 
 // ====================== AUTH ======================
 
 export const login = async (email: string, password: string) => {
   try {
-    const { data } = await apiClient.post('/api/auth/login', { email, password });
-    const token = (data as any).token ?? (data as any).access_token;
-    const user  = (data as any).user;
-    if (token) setToken(token);
-    return { success: true, user };
+    const data = await request<{ access_token: string; user: any }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    return { success: true, user: data.user };
   } catch (e: any) {
-    return { success: false, error: e?.response?.data?.message || 'Login failed' };
+    return { success: false, error: e?.message || 'Login failed' };
   }
 };
 
 export const loginWithUsername = async (username: string, password: string) => {
   try {
-    const { data } = await apiClient.post('/api/auth/login', { username, password });
-    const token = (data as any).token ?? (data as any).access_token;
-    const user  = (data as any).user;
-    if (token) setToken(token);
-    return { success: true, user };
+    const data = await request<{ access_token: string; user: any }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    return { success: true, user: data.user };
   } catch (e: any) {
-    return { success: false, error: e?.response?.data?.message || 'Login failed' };
+    return { success: false, error: e?.message || 'Login failed' };
   }
 };
 
 export const getMe = async () => {
   try {
-    const res = await apiClient.get('/api/auth/me');
-    return (res.data as any).user;
+    const data = await request<{ user: any }>('/api/auth/me');
+    return data.user;
   } catch (e) {
     console.error('Error fetching user:', e);
     return null;
@@ -73,103 +62,147 @@ export const getMe = async () => {
 // ==================== INVENTORY ====================
 
 export const getInventory = () =>
-  unwrap(apiClient.get('/api/inventory'));
+  request<any[]>('/api/inventory');
 
 export const createInventory = (item: any) =>
-  unwrap(apiClient.post('/api/inventory', item));
+  request<any>('/api/inventory', {
+    method: 'POST',
+    body: JSON.stringify(item),
+  });
 
 export const updateInventory = (id: string, data: any) =>
-  unwrap(apiClient.put(`/api/inventory/${id}`, data));
+  request<any>(`/api/inventory/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
 
 export const deleteInventory = (id: string) =>
-  unwrap(apiClient.delete(`/api/inventory/${id}`));
+  request<void>(`/api/inventory/${id}`, {
+    method: 'DELETE',
+  });
 
 // ====================== ORDERS =====================
 
 export const getOrders = () =>
-  unwrap(apiClient.get('/api/orders'));
+  request<any[]>('/api/orders');
 
 export const createOrder = (payload: any) =>
-  unwrap(apiClient.post('/api/orders', payload));
+  request<any>('/api/orders', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 
 // ======================= STAFF =====================
 
 export const getStaff = () =>
-  unwrap(apiClient.get('/api/staff'));
+  request<any[]>('/api/staff');
 
 export const createStaff = async (data: any) => {
   try {
-    const res = await apiClient.post('/api/staff', data);
-    return { success: true, data: res.data };
+    const res = await request<any>('/api/staff', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return { success: true, data: res };
   } catch (e: any) {
     console.error('Error creating staff member:', e);
-    return { success: false, error: e?.response?.data?.message || 'Failed to create staff' };
+    return { success: false, error: e?.message || 'Failed to create staff' };
   }
 };
 
 export const updateStaff = (id: string, data: any) =>
-  unwrap(apiClient.put(`/api/staff/${id}`, data));
+  request<any>(`/api/staff/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
 
 export const deleteStaff = (id: string) =>
-  unwrap(apiClient.delete(`/api/staff/${id}`));
+  request<void>(`/api/staff/${id}`, {
+    method: 'DELETE',
+  });
 
 // ===================== SUPPLIERS ===================
 
 export const getSuppliers = () =>
-  unwrap(apiClient.get('/api/suppliers'));
+  request<any[]>('/api/suppliers');
 
 export const createSupplier = (data: any) =>
-  unwrap(apiClient.post('/api/suppliers', data));
+  request<any>('/api/suppliers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 
 export const updateSupplier = (id: string, data: any) =>
-  unwrap(apiClient.put(`/api/suppliers/${id}`, data));
+  request<any>(`/api/suppliers/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
 
 export const deleteSupplier = (id: string) =>
-  unwrap(apiClient.delete(`/api/suppliers/${id}`));
+  request<void>(`/api/suppliers/${id}`, {
+    method: 'DELETE',
+  });
 
 // ================= STOCK MOVEMENTS =================
 
 export const getStockMovements = () =>
-  unwrap(apiClient.get('/api/stock-movements'));
+  request<any[]>('/api/stock-movements');
 
 export const createStockMovement = (data: any) =>
-  unwrap(apiClient.post('/api/stock-movements', data));
+  request<any>('/api/stock-movements', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 
 // ====================== RECIPES ====================
 
 export const getRecipes = () =>
-  unwrap(apiClient.get('/api/recipes'));
+  request<any[]>('/api/recipes');
 
 export const createRecipe = (data: any) =>
-  unwrap(apiClient.post('/api/recipes', data));
+  request<any>('/api/recipes', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 
 export const updateRecipe = (id: string, data: any) =>
-  unwrap(apiClient.put(`/api/recipes/${id}`, data));
+  request<any>(`/api/recipes/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
 
 export const deleteRecipe = (id: string) =>
-  unwrap(apiClient.delete(`/api/recipes/${id}`));
+  request<void>(`/api/recipes/${id}`, {
+    method: 'DELETE',
+  });
 
 // ========= DELIVERY CONFIRMATIONS ==================
 
 export const getDeliveryConfirmations = () =>
-  unwrap(apiClient.get('/api/delivery-confirmations'));
+  request<any[]>('/api/delivery-confirmations');
 
 export const createDeliveryConfirmation = (data: any) =>
-  unwrap(apiClient.post('/api/delivery-confirmations', data));
+  request<any>('/api/delivery-confirmations', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 
 export const getDeliveryConfirmationByOrderId = (orderId: string) =>
-  unwrap(apiClient.get(`/api/delivery-confirmations/order/${orderId}`));
+  request<any>(`/api/delivery-confirmations/order/${orderId}`);
 
 // ===================== CUSTOMERS ===================
 
 export const getCustomers = () =>
-  unwrap(apiClient.get('/api/customers'));
+  request<any[]>('/api/customers');
 
 export const createCustomer = (data: any) =>
-  unwrap(apiClient.post('/api/customers', data));
+  request<any>('/api/customers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 
 export const updateCustomer = (id: string, data: any) =>
-  unwrap(apiClient.put(`/api/customers/${id}`, data));
-
-// (exporting apiClient in case other modules need it)
-export { apiClient };
+  request<any>(`/api/customers/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });

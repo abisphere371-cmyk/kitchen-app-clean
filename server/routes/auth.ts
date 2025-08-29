@@ -36,11 +36,17 @@ router.post('/login', async (req: any, res: any) => {
 
     const token = signJwt({ id: user.id, email: user.email, role: user.role, name: user.name ?? null });
 
-    // minimal user shape used by the frontend
-    return res.json({
-      access_token: token,
-      user: { id: user.id, email: user.email, role: user.role, name: user.name ?? null },
+    // Set the auth cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      sameSite: 'lax',      // same-origin app: 'lax' is fine; if cross-origin use 'none'
+      secure: process.env.NODE_ENV === 'production',         // Railway is HTTPS; requires app.set('trust proxy', 1)
+      maxAge: 1000 * 60 * 60 * 8, // 8h
     });
+
+    // minimal user shape used by the frontend
+    const safeUser = { id: user.id, email: user.email, role: user.role, name: user.name ?? null };
+    return res.json({ user: safeUser });
   } catch (err: any) {
     if (err instanceof z.ZodError) {
       return res.status(400).json({ message: 'Validation error', errors: err.errors });
@@ -54,6 +60,12 @@ router.post('/login', async (req: any, res: any) => {
 router.get("/me", requireAuth, async (req: any, res: any) => {
   const user = req.user as UserPayload;
   return res.json({ user });
+});
+
+// POST /api/auth/logout
+router.post("/logout", (req, res) => {
+  res.clearCookie('token');
+  return res.status(200).json({ message: 'Logged out successfully' });
 });
 
 export default router;

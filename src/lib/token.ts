@@ -1,33 +1,19 @@
-// Token management for JWT authentication
-const TOKEN_KEY = 'gkms_token';
+// Token management is now handled via cookies, not localStorage
+// This file is kept for compatibility but is no longer used
 
 export const getToken = (): string | null => {
-  return localStorage.getItem(TOKEN_KEY);
+  return null;
 };
 
 export const setToken = (token: string): void => {
-  localStorage.setItem(TOKEN_KEY, token);
+  // No-op, cookies are handled by the browser
 };
 
 export const clearToken = (): void => {
-  localStorage.removeItem(TOKEN_KEY);
+  // No-op, cookies are handled by the browser
 };
 
 export const isTokenValid = (): boolean => {
-  const token = getToken();
-  if (!token) return false;
-  
-  try {
-    // Basic JWT structure check
-    const parts = token.split('.');
-    if (parts.length !== 3) return false;
-    
-    // Decode payload to check expiration
-    const payload = JSON.parse(atob(parts[1]));
-    const now = Math.floor(Date.now() / 1000);
-    
-    return payload.exp > now;
-  } catch {
-    return false;
-  }
+  // Always return false since we're not using localStorage for tokens anymore
+  return false;
 };

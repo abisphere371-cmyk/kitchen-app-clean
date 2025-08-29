@@ -20,16 +20,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
+  // With cookie-based auth, we rely on the server to validate the session
+  // The user will be fetched from the server on app load
   useEffect(() => {
-    const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
+    const fetchUser = async () => {
       try {
-        setUser(JSON.parse(savedUser));
+        const userDetails = await dataClient.getMe();
+        if (userDetails) {
+          setUser({
+            id: userDetails.id,
+            name: userDetails.name,
+            email: userDetails.email,
+            role: userDetails.role,
+            phone: userDetails.phone || '',
+            username: userDetails.username || userDetails.email
+          });
+        }
       } catch (error) {
-        console.error('Error parsing saved user:', error);
-        localStorage.removeItem('currentUser');
+        console.error('Error fetching user:', error);
+        // User is not authenticated, which is fine
+        setUser(null);
       }
-    }
+    };
+
+    fetchUser();
   }, []);
 
   const addUser = async (userData: any): Promise<boolean> => {
@@ -68,7 +82,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
           console.log('✅ Authentication successful! Setting user:', authenticatedUser);
           setUser(authenticatedUser);
-          localStorage.setItem('currentUser', JSON.stringify(authenticatedUser));
           return true;
         }
       }
@@ -83,9 +96,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      // Make a request to the server to clear the cookie
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
     setUser(null);
-    localStorage.removeItem('currentUser');
     console.log('👋 User logged out');
   };
 

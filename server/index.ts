@@ -5,6 +5,7 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import cookieParser from 'cookie-parser';
 
 import { testConnection } from './db.js';
 import authRoutes from './routes/auth.js';
@@ -17,9 +18,18 @@ import stockMovementsRoutes from './routes/stockMovements.js';
 import { runMigrations } from './migrate.js';   // ✅ correct path
 
 const app = express();
-app.use(cors());
+
+// very important behind Railway proxy so "secure" cookies work
+app.set('trust proxy', 1);
+
+app.use(cors({
+  origin: true,         // reflect request origin
+  credentials: true,    // allow cookies/authorization headers
+}));
+
 app.use(morgan('dev'));
 app.use(express.json());
+app.use(cookieParser());
 
 // API routes
 app.use('/api/auth', authRoutes);
