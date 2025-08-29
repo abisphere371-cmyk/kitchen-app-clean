@@ -1,9 +1,12 @@
-import { Router } from 'express';
+import bcrypt from "bcryptjs";
+import { Router } from "express";
+import type { Request, Response } from "express";
 import { z } from 'zod';
-import { query } from '../db.js';
-import { requireAuth, hashPassword } from '../auth.js';
+import { pool } from '../db.js';
+import { requireAuth } from '../auth.js';
 
 const router = Router();
+const SALT_ROUNDS = 10;
 
 const createStaffSchema = z.object({
   name: z.string().min(1),
@@ -17,9 +20,9 @@ const createStaffSchema = z.object({
 });
 
 // GET all staff
-router.get('/', requireAuth, async (_req: any, res: any) => {
+router.get('/', requireAuth, async (_req: Request, res: Response) => {
   try {
-    const result = await query(`
+    const result = await pool.query(`
       SELECT u.id, u.email, u.role, u.name,
              sm.phone, sm.department, sm.salary, sm.active AS "isActive", sm.created_at, sm.updated_at
       FROM users u
@@ -34,98 +37,86 @@ router.get('/', requireAuth, async (_req: any, res: any) => {
   }
 });
 
-// CREATE staff (transaction)
-router.post('/', requireAuth, async (req, res) => {
-  const client = await (await import('pg')).Pool.prototype.connect.call((await import('../db.js')).pool).catch(() => null);
+// CREATE staff member
+router.post("/", requireAuth, async (req: Request, res: Response) => {
   try {
     const data = createStaffSchema.parse(req.body);
-    if (!client) throw new Error('No DB client');
 
-    await client.query('BEGIN');
+    // 1) create user row first (users table)
+    const passwordHash = await bcrypt.hash(data.password ?? "", SALT_ROUNDS);
 
-    const passHash = await hashPassword(data.password);
-
-    const userIns = await client.query(
+    const userInsert = await pool.query(
       `INSERT INTO users (email, password_hash, role, name)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (email) DO UPDATE
-         SET role = EXCLUDED.role,
-             name = COALESCE(users.name, EXCLUDED.name)
-       RETURNING id, email, role, name`,
-      [data.email.toLowerCase(), passHash, data.role, data.name]
+       RETURNING id`,
+      [data.email.toLowerCase(), passwordHash, data.role ?? "kitchen_staff", data.name ?? null]
+    );
+    const userId = userInsert.rows[0].id;
+
+    // 2) create staff_members row (FK = users.id)
+    await pool.query(
+      `INSERT INTO staff_members
+         (id, name, email, phone, role, department, salary, active)
+       VALUES
+         ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [userId, data.name ?? null, data.email.toLowerCase() ?? null, data.phone ?? null, data.role ?? null, data.department ?? null, data.salary ?? null, data.active ?? true]
     );
 
-    const user = userIns.rows[0];
-
-    const staffIns = await client.query(
-      `INSERT INTO staff_members (id, name, email, phone, role, department, salary, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, TRUE))
-       ON CONFLICT (id) DO UPDATE
-         SET name = EXCLUDED.name,
-             email = EXCLUDED.email,
-             phone = EXCLUDED.phone,
-             role = EXCLUDED.role,
-             department = EXCLUDED.department,
-             salary = EXCLUDED.salary,
-             active = EXCLUDED.active,
-             updated_at = NOW()
-       RETURNING phone, department, salary, active, created_at, updated_at`,
-      [user.id, data.name, data.email.toLowerCase(), data.phone ?? null, data.role, data.department ?? null, data.salary ?? null, data.active]
-    );
-
-    await client.query('COMMIT');
-
-    res.status(201).json({ ...user, ...staffIns.rows[0] });
+    res.status(201).json({ id: userId });
   } catch (err) {
-    if (client) await client.query('ROLLBACK').catch(() => {});
     if (err instanceof z.ZodError) {
       return res.status(400).json({ message: 'Validation error', errors: err.errors });
     }
     console.error('Create staff error:', err);
     res.status(500).json({ message: 'Internal server error' });
-  } finally {
-    client?.release();
   }
 });
 
-// UPDATE staff (update users + staff_members)
-router.put('/:id', requireAuth, async (req, res) => {
-  const id = req.params.id;
-  const schema = createStaffSchema.partial().omit({ password: true });
-  const client = await (await import('pg')).Pool.prototype.connect.call((await import('../db.js')).pool).catch(() => null);
-
+// UPDATE staff member (incl. optional password change)
+router.put("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
+    const { id } = req.params;
+    const schema = createStaffSchema.partial();
     const data = schema.parse(req.body);
-    if (!client) throw new Error('No DB client');
 
-    await client.query('BEGIN');
-
+    // update basic user fields
     if (data.email || data.role || data.name) {
-      await client.query(
+      await pool.query(
         `UPDATE users
          SET email = COALESCE($2, email),
-             role = COALESCE($3, role),
-             name = COALESCE($4, name),
+             role  = COALESCE($3, role),
+             name  = COALESCE($4, name),
              updated_at = NOW()
          WHERE id = $1`,
         [id, data.email?.toLowerCase() ?? null, data.role ?? null, data.name ?? null]
       );
     }
 
-    await client.query(
+    // update password if provided
+    if (data.password) {
+      const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
+      await pool.query(
+        `UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1`,
+        [id, passwordHash]
+      );
+    }
+
+    // update staff_members
+    await pool.query(
       `UPDATE staff_members
-       SET phone = COALESCE($2, phone),
-           department = COALESCE($3, department),
-           salary = COALESCE($4, salary),
-           active = COALESCE($5, active),
+       SET name = COALESCE($2, name),
+           email = COALESCE($3, email),
+           phone = COALESCE($4, phone),
+           role = COALESCE($5, role),
+           department = COALESCE($6, department),
+           salary = COALESCE($7, salary),
+           active = COALESCE($8, active),
            updated_at = NOW()
        WHERE id = $1`,
-      [id, data.phone ?? null, data.department ?? null, data.salary ?? null, data.active ?? null]
+      [id, data.name ?? null, data.email?.toLowerCase() ?? null, data.phone ?? null, data.role ?? null, data.department ?? null, data.salary ?? null, data.active ?? null]
     );
 
-    await client.query('COMMIT');
-
-    const { rows } = await query(
+    const { rows } = await pool.query(
       `SELECT u.id, u.email, u.role, u.name,
               sm.phone, sm.department, sm.salary, sm.active, sm.created_at, sm.updated_at
        FROM users u
@@ -135,21 +126,18 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     res.json(rows[0]);
   } catch (err) {
-    if (client) await client.query('ROLLBACK').catch(() => {});
     if (err instanceof z.ZodError) {
       return res.status(400).json({ message: 'Validation error', errors: err.errors });
     }
     console.error('Update staff error:', err);
     res.status(500).json({ message: 'Internal server error' });
-  } finally {
-    client?.release();
   }
 });
 
 // DELETE staff (soft delete staff_members.active = false)
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
-    await query(`UPDATE staff_members SET active = FALSE, updated_at = NOW() WHERE id = $1`, [req.params.id]);
+    await pool.query(`UPDATE staff_members SET active = FALSE, updated_at = NOW() WHERE id = $1`, [req.params.id]);
     res.status(204).send();
   } catch (err) {
     console.error('Delete staff error:', err);
