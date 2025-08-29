@@ -8,7 +8,6 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 
-import { testConnection } from './db.js';
 import authRoutes from './routes/auth.js';
 import customerRoutes from './routes/customers.js';
 import inventoryRoutes from './routes/inventory.js';
@@ -67,8 +66,6 @@ async function start() {
   try {
     // Run migrations but DO NOT close the pool here
     await runMigrations();
-    
-    await testConnection();
     
     const PORT = process.env.PORT || 8080;
     app.listen(PORT, () => {

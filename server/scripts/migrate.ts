@@ -1,5 +1,5 @@
 ﻿// server/scripts/migrate.ts
-import { pool } from '../db';
+import { pool } from '../db.js';
 
 export async function runMigrations() {
   const client = await pool.connect();
